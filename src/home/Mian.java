@@ -39,6 +39,25 @@ public class Mian {
 		new Thread(producer).start();
 		new Thread(consumer1).start();
 		new Thread(consumer2).start();
+		
+		/*
+		 * For the commit associated with this comment thread interference no longer occurs
+		 * when main() method is run because the MyProducer thread sleeps after writing a string 
+		 * usually the MyConsumer thread will have a chance at that point to remove the last string
+		 * added before the MyProducer thread itself runs again N/B: When removing sometimes only one of
+		 * the MyConsumer threads gets the chance to remove the string unlike the "Exiting" display that is 
+		 * printed out by both threads. Before Java 1.5 synchronization was the only arrow in our quiver for
+		 * dealing with thread interference. One of its drawbacks is that thread that are blocked waiting to 
+		 * execute synchronization code can't be interrupted. Once they are blocked they're stuck there until they get the lock for the object
+		 * the code is synchronizing on and that can lead to problems. The second drawback is that the synchronized block must be
+		 * within the same method i.e. We cannot start a synchronized block in one method and end the synchronized block in another
+		 * method. The third drawback is that we cannot test to see if an object's intrinsic lock is available or find out any other
+		 * information about that lock. Also if the lock isn't available we can't time out after we've waited for the lock for a while.
+		 * When we reach the beginning of a synchronized block we can either get the lock and continue executing or block on that line of code until
+		 * we get the lock and the fourth drawback is that if multiple threads re waiting to get a lock it is not first-come-first-serve as there isn't 
+		 * a set order that JVM will choose the next thread that gets the lock. So the first thread that blocked could be the last thread to get the lock
+		 * and vice versa. Instead of using synchronization we can use classes that implement the Java.util.Concurrent locks interface   
+		 */
 
 	}
 
@@ -68,7 +87,9 @@ class MyProducer implements Runnable{
 		for (String num : nums) {//for each to loop through String array nums
 			try {
 				System.out.println(color + "Adding..." + num);//print out color and number from String array
-				buffer.add(num);//add to buffer
+				synchronized (buffer) {
+					buffer.add(num);//add to buffer
+				}
 				
 				Thread.sleep(random.nextInt(1000));//sleep for one second
 			} catch (InterruptedException e) {
@@ -76,8 +97,18 @@ class MyProducer implements Runnable{
 			}
 		}
 		
-		System.out.println(color + "Adding EOF and exiting...");
-		buffer.add("EOF");
+		System.out.println(color + "Adding EOF and exiting...");//The code does not need to include this display statement in
+																//the synchronized block because if the MyProducer thread is suspended
+																//between printing the line and actually adding the data it wont matter
+																//A consumer could read any existing data from the buffer and in that case
+																//it wont change what the MyProducer adds when it runs again
+		synchronized (buffer) {
+			buffer.add("EOF"); //At this point code is modified to synchronize the two add() method
+							   //calls to buffer because ArrayList isn't thread safe. If code doesn't
+							   //synchronize and the MyProducer is suspended in the middle of running 
+							   //the add() method and one of the consumers then calls get() or remove()
+							   //the internal integrity of the ArrayList might be compromised depending on timing
+		}
 	}
 }
 
@@ -110,17 +141,24 @@ class MyConsumer implements Runnable{
 	//this run() method is different from the one in the buffer because
 	//we are going to be processing the buffer instead of creating it
 	public void run() {
+		//The goal of synchronizing the buffer and the whole if and if-else statements in
+		//the while loop is we don't want the MyProducer thread or the other Consumer to modify the array list 
+		//once the MyConsumer thread has checked whether the buffer is empty
+		//we want all calls to methods in the array list to take place as a unit collectively and
+		//they all run as a critical section
 		while (true) {
-			if(buffer.isEmpty()) {
-				continue;	
-			}
-			if (buffer.get(0).equals(Mian.EOF)) {
-				System.out.println(color + "Exiting");
-				break;
-			}else {
-				System.out.println(color + "Removed " + buffer.remove(0));
-			}
+			synchronized (buffer) {
 			
+				if(buffer.isEmpty()) {
+					continue;	
+				}
+				if (buffer.get(0).equals(Mian.EOF)) {
+					System.out.println(color + "Exiting");
+					break;
+				}else {
+					System.out.println(color + "Removed " + buffer.remove(0));
+				}
+			}
 		}
 	}
 }
